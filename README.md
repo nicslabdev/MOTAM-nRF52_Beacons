@@ -6,9 +6,13 @@ MOTAM project uses nRF52840 PDK by Nordic Semiconductor in order to improve some
 
 This is possible thanks to the new improvements of Bluetooth 5: long range and extended advertisements.
 
-##nRF52 software version##
+## nRF52 software version ##
 
 Currently, this project use:
 
 - nRF5 SDK v15.0.0
 - S140 SoftDevice v6.0.0 API
+
+## Get started ##
+
+To compile it, clone the repository into the * \nRF5_SDK_15.0.0\examples\ble_peripheral * folder.
