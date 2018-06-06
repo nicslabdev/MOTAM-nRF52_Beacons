@@ -252,6 +252,19 @@ static void idle_state_handle(void)
     }
 }
 
+// [MOTAM] Print beacon info by serial port
+static void motam_print_beacon_info ()
+{
+    NRF_LOG_INFO("-------------------------------------------------");
+    NRF_LOG_INFO("MOTAM SIGN BEACON STARTED");
+    NRF_LOG_INFO("Latitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LATITUDE);
+    NRF_LOG_INFO("Longitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LONGITUDE);
+    NRF_LOG_INFO("Beacon type: 0x%02x", BEACON_TYPE);
+    NRF_LOG_INFO("Direction from applies (little-end): 0x%02x 0x%02x", DIRECTION_FROM);
+    NRF_LOG_INFO("Direction to applies (little-end): 0x%02x 0x%02x", DIRECTION_TO);
+    NRF_LOG_INFO("-------------------------------------------------");
+}
+
 
 /**
  * @brief Function for application main entry.
@@ -261,17 +274,9 @@ int main(void)
     log_init();    timers_init();    leds_init();    power_management_init();    ble_stack_init();
 
     motam_frame_init( );
-    motam_advertising_init();
-    advertising_start();
+    motam_advertising_init();    advertising_start();
 
-    NRF_LOG_INFO("-------------------------------------------------");
-    NRF_LOG_INFO("MOTAM SIGN BEACON STARTED");
-    NRF_LOG_INFO("Latitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LATITUDE);
-    NRF_LOG_INFO("Longitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LONGITUDE);
-    NRF_LOG_INFO("Beacon type: 0x%02x", BEACON_TYPE);
-    NRF_LOG_INFO("Direction from applies (little-end): 0x%02x 0x%02x", DIRECTION_FROM);
-    NRF_LOG_INFO("Direction to applies (little-end): 0x%02x 0x%02x", DIRECTION_TO);
-
+    motam_print_beacon_info ();
 
     for (;;)
     {
