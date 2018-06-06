@@ -1,7 +1,7 @@
 /***************************************************************************************/
 /*
  * Stop_Sign-Detached_Signature
- * Created by Manuel Montenegro, Jun 4, 2018.
+ * Created by Manuel Montenegro, Jun 6, 2018.
  * Developed for MOTAM project.
  *
  *  This is an alternative to Stop_Sign application developed for devices that don't
@@ -49,14 +49,18 @@
 static ble_gap_adv_params_t m_adv_params;                                  /**< Parameters to be passed to the stack when starting advertising. */
 
 static uint8_t              m_adv_handle = BLE_GAP_ADV_SET_HANDLE_NOT_SET; /**< Advertising handle used to identify an advertising set. */
-static uint8_t              m_enc_advdata[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
+
+static uint8_t				advdata_flag;									// [MOTAM] Flag: Last m_enc_advdata used. Necessary in order to update adv
+static uint8_t              m_enc_advdata1[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
+static uint8_t              m_enc_advdata2[BLE_GAP_ADV_SET_DATA_SIZE_MAX]; 	// [MOTAM] In order to update adv data, It has to alternate between the two buffers
+
 
 /**@brief Struct that contains pointers to the encoded advertising data. */
 static ble_gap_adv_data_t m_adv_data =
 {
     .adv_data =
     {
-        .p_data = m_enc_advdata,
+        .p_data = m_enc_advdata1,
         .len    = BLE_GAP_ADV_SET_DATA_SIZE_MAX
     },
     .scan_rsp_data =
@@ -108,6 +112,8 @@ static void motam_frame_init ( )
 	m_adv_data.adv_data.len = DATA_LENGTH + 1;
 	memcpy (m_adv_data.adv_data.p_data, frame, DATA_LENGTH + 1);
 
+	advdata_flag = 1;
+
 }
 
 
@@ -143,6 +149,36 @@ static void advertising_start(void)
 
     err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
     APP_ERROR_CHECK(err_code);
+}
+
+
+/*
+ * [MOTAM] Update MOTAM beacon frame.
+ * The frame size must be DATA_LENGTH + 1
+*/
+static void motam_frame_update ( uint8_t * frame, uint8_t frame_size )
+{
+
+	ret_code_t err_code;
+
+	if (advdata_flag == 1)
+	{
+		memcpy (m_enc_advdata2, frame, frame_size);
+		m_adv_data.adv_data.p_data = m_enc_advdata2;
+		advdata_flag = 2;
+	}
+	else
+	{
+		memcpy (m_enc_advdata1, frame, frame_size);
+		m_adv_data.adv_data.p_data = m_enc_advdata1;
+		advdata_flag = 1;
+	}
+
+	m_adv_data.adv_data.len = frame_size;
+
+	err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data, NULL);
+	APP_ERROR_CHECK(err_code);
+
 }
 
 
@@ -228,6 +264,7 @@ int main(void)
     motam_advertising_init();
     advertising_start();
 
+    NRF_LOG_INFO("-------------------------------------------------");
     NRF_LOG_INFO("MOTAM SIGN BEACON STARTED");
     NRF_LOG_INFO("Latitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LATITUDE);
     NRF_LOG_INFO("Longitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LONGITUDE);
