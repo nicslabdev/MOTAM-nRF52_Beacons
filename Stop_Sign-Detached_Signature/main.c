@@ -1,7 +1,7 @@
 /***************************************************************************************/
 /*
  * Stop_Sign-Detached_Signature
- * Created by Manuel Montenegro, Jun 6, 2018.
+ * Created by Manuel Montenegro, Jun 8, 2018.
  * Developed for MOTAM project.
  *
  *  This is an alternative to Stop_Sign application developed for devices that don't
@@ -255,14 +255,13 @@ static void idle_state_handle(void)
 // [MOTAM] Print beacon info by serial port
 static void motam_print_beacon_info ()
 {
-    NRF_LOG_INFO("-------------------------------------------------");
-    NRF_LOG_INFO("MOTAM SIGN BEACON STARTED");
+    NRF_LOG_INFO("--- MOTAM SIGN BEACON STARTED ---");
     NRF_LOG_INFO("Latitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LATITUDE);
     NRF_LOG_INFO("Longitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LONGITUDE);
     NRF_LOG_INFO("Beacon type: 0x%02x", BEACON_TYPE);
-    NRF_LOG_INFO("Direction from applies (little-end): 0x%02x 0x%02x", DIRECTION_FROM);
-    NRF_LOG_INFO("Direction to applies (little-end): 0x%02x 0x%02x", DIRECTION_TO);
-    NRF_LOG_INFO("-------------------------------------------------");
+    NRF_LOG_INFO("Direction from (little-end): 0x%02x 0x%02x", DIRECTION_FROM);
+    NRF_LOG_INFO("Direction to (little-end): 0x%02x 0x%02x", DIRECTION_TO);
+    NRF_LOG_INFO("---------------------------------");
 }
 
 
