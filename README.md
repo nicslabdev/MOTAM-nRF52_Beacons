@@ -15,7 +15,7 @@ Currently, this project use:
 
 ## Get started ##
 
-To compile it, clone the repository into the *\nRF5_SDK_15.0.0\examples\ble_peripheral* folder.
+To compile it, put the folders inside nRF52 into the *\nRF5_SDK_15.0.0\examples\ble_peripheral* folder.
 
 ## Applications' description ##
 
