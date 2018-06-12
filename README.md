@@ -8,7 +8,7 @@ This is possible thanks to some of the new improvements of Bluetooth 5: long ran
 
 ## Requirements ##
 
-Currently, this project use:
+Currently, this project uses:
 
 - nRF5 SDK version 15.0.0
 - S140 SoftDevice v6.0.0 API
