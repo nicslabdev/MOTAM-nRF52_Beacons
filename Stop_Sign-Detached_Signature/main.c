@@ -1,7 +1,7 @@
 /***************************************************************************************/
 /*
- * Stop_Sign-Detached_Signature
- * Created by Manuel Montenegro, Jun 8, 2018.
+ * Stop_Sign-Detached_Signature-Single_Adv
+ * Created by Manuel Montenegro, Jun 20, 2018.
  * Developed for MOTAM project.
  *
  *  This is an alternative to Stop_Sign application developed for devices that don't
@@ -21,6 +21,7 @@
 #include "nrf_soc.h"
 #include "nrf_sdh.h"
 #include "nrf_sdh_ble.h"
+#include "ble_radio_notification.h"
 #include "ble_advdata.h"
 #include "app_timer.h"
 #include "nrf_pwr_mgmt.h"
@@ -205,6 +206,27 @@ static void ble_stack_init(void)
 }
 
 
+// [MOTAM] Handler for radio notification interruption (radio active and nonactive)
+static void radio_active_handler ( bool radio_active ) {
+
+	NRF_LOG_INFO("radio_active value: %d", radio_active );
+
+}
+
+// [MOTAM] Radio notification will notify when a advertisement is sent
+static void radio_notification_init (void)
+{
+    uint32_t err_code;
+
+    err_code = ble_radio_notification_init	(
+    										APP_IRQ_PRIORITY_LOW,
+    										NRF_RADIO_NOTIFICATION_DISTANCE_800US,
+											radio_active_handler
+											);
+    APP_ERROR_CHECK(err_code);
+}
+
+
 /**@brief Function for initializing logging. */
 static void log_init(void)
 {
@@ -253,7 +275,7 @@ static void idle_state_handle(void)
 }
 
 // [MOTAM] Print beacon info by serial port
-static void motam_print_beacon_info ()
+static void motam_print_beacon_info (void)
 {
     NRF_LOG_INFO("--- MOTAM SIGN BEACON STARTED ---");
     NRF_LOG_INFO("Latitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x", LATITUDE);
@@ -270,10 +292,15 @@ static void motam_print_beacon_info ()
  */
 int main(void)
 {
-    log_init();    timers_init();    leds_init();    power_management_init();    ble_stack_init();
-
+    log_init();
+    timers_init();
+    leds_init();
+    power_management_init();
+    ble_stack_init();
+    radio_notification_init();
     motam_frame_init( );
-    motam_advertising_init();    advertising_start();
+    motam_advertising_init();
+    advertising_start();
 
     motam_print_beacon_info ();
 
@@ -282,4 +309,5 @@ int main(void)
         idle_state_handle();
     }
 }
+
 
