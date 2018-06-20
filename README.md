@@ -18,6 +18,8 @@ Currently, this project uses:
 
 To compile it, put the folders inside nRF52 into the *\nRF5_SDK_15.0.0\examples\ble_peripheral* folder.
 
+Due to a bug detected in SDK v15.0.0 radio notification module, you have to replace *nRF5_SDK_15.0.0_a53641a/components/ble/ble_radio_notification/ble_radio_notification.h* with the file you can find in repository's SDK folder.
+
 ## Applications' description ##
 
 - **Stop_Sign**:  This application is the starting point of BT5 secure beacon development. It generates a secure signature, in order to authenticate beacon data, and send a beacon frame that includes data and the generated digital signature. For this, ECDSA cryptographic algorithm is used.
