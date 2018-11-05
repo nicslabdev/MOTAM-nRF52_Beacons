@@ -1,7 +1,7 @@
 /***************************************************************************************/
 /*
  * intelligent_traffic_light
- * Created by Manuel Montenegro, Oct 10, 2018.
+ * Created by Manuel Montenegro, Oct 15, 2018.
  * Developed for MOTAM project.
  *
  *  This is a intelligent traffic light.
@@ -41,9 +41,10 @@
 #define RED_STATE						0x00									// Identifier of Red traffic light state
 #define YELLOW_STATE					0x01									// Identifier of Yellow traffic light state
 #define GREEN_STATE						0x02									// Identifier of Green traffic light state
-#define RED_STATE_DURATION				8										// Duration of red traffic light state in seconds
-#define YELLOW_STATE_DURATION			4										// Duration of yellow traffic light state in seconds
-#define GREEN_STATE_DURATION			8										// Duration of green traffic light state in seconds
+#define RED_STATE_DURATION				30										// Duration of red traffic light state in seconds (MINIMUM VALUE: 5 SECONDS)
+#define YELLOW_STATE_DURATION			5										// Duration of yellow traffic light state in seconds
+#define GREEN_STATE_DURATION			30										// Duration of green traffic light state in seconds
+#define BLINKY_STATE_DURATION			5										// Duration of blinky state of pedestrian green light
 static uint8_t 							lastState;								// Last traffic light state
 static uint8_t							currentState;							// Current traffic light state
 static uint32_t 						lastStateTicks;							// Timers ticks of the last state change
@@ -230,15 +231,19 @@ static void radio_active_handler ( bool radio_active )
 // ======== GPIO and timers initialization ========
 
 // GPIO LED parameters
-#define LED_RED NRF_GPIO_PIN_MAP(1,10)
-#define LED_YELLOW NRF_GPIO_PIN_MAP(1,13)
-#define LED_GREEN NRF_GPIO_PIN_MAP(1,15)
+#define LED_RED 						NRF_GPIO_PIN_MAP(1,10)
+#define LED_YELLOW 						NRF_GPIO_PIN_MAP(1,13)
+#define LED_GREEN 						NRF_GPIO_PIN_MAP(1,15)
+#define LED_RED_PEDESTRIAN 				NRF_GPIO_PIN_MAP(0,29)
+#define LED_GREEN_PEDESTRIAN			NRF_GPIO_PIN_MAP(0,31)
 
-#define DURATION_RED APP_TIMER_TICKS(8000)										// Duration of red state in milliseconds
-#define DURATION_YELLOW APP_TIMER_TICKS(4000)									// Duration of yellow state in milliseconds
-#define DURATION_GREEN APP_TIMER_TICKS(8000)									// Duration of green state in mmilliseconds
+#define DURATION_RED 					APP_TIMER_TICKS(RED_STATE_DURATION*1000)	// Duration of red state in milliseconds
+#define DURATION_YELLOW 				APP_TIMER_TICKS(YELLOW_STATE_DURATION*1000) // Duration of yellow state in milliseconds
+#define DURATION_GREEN 					APP_TIMER_TICKS(GREEN_STATE_DURATION*1000)	// Duration of green state in milliseconds
+#define DURATION_BLINKY					APP_TIMER_TICKS(BLINKY_STATE_DURATION*1000)// Duration of blinky in pedestrian green state in milliseconds
 
-APP_TIMER_DEF (timer);															// Timer instance
+APP_TIMER_DEF (timer);															// Timer instance for traffic
+APP_TIMER_DEF (timer_pedestrian);												// Timer instance for pedestrian blinky green light
 
 // Put all LEDs to low
 static void pins_clear ()
@@ -246,6 +251,8 @@ static void pins_clear ()
 	nrf_gpio_pin_clear(LED_RED);
 	nrf_gpio_pin_clear(LED_YELLOW);
 	nrf_gpio_pin_clear(LED_GREEN);
+	nrf_gpio_pin_clear(LED_RED_PEDESTRIAN);
+	nrf_gpio_pin_clear(LED_GREEN_PEDESTRIAN);
 }
 
 // GPIO ports initialization
@@ -275,6 +282,22 @@ static void gpio_init()
 			NRF_GPIO_PIN_H0H1,
 			NRF_GPIO_PIN_NOSENSE
 			);
+	nrf_gpio_cfg(																// Set up of Green Light
+			LED_RED_PEDESTRIAN,
+			NRF_GPIO_PIN_DIR_OUTPUT,
+			NRF_GPIO_PIN_INPUT_DISCONNECT,
+			NRF_GPIO_PIN_PULLUP,
+			NRF_GPIO_PIN_H0H1,
+			NRF_GPIO_PIN_NOSENSE
+			);
+	nrf_gpio_cfg(																// Set up of Green Light
+			LED_GREEN_PEDESTRIAN,
+			NRF_GPIO_PIN_DIR_OUTPUT,
+			NRF_GPIO_PIN_INPUT_DISCONNECT,
+			NRF_GPIO_PIN_PULLUP,
+			NRF_GPIO_PIN_H0H1,
+			NRF_GPIO_PIN_NOSENSE
+			);
 
 	pins_clear();																// Set all leds to low
 }
@@ -290,6 +313,7 @@ static void timer_handler (void *p_context)
 	{
 		currentState = GREEN_STATE;												// New state: green
 		nrf_gpio_pin_set(LED_GREEN);											// Turn on green light
+		nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
 		err_code = app_timer_start ( timer, DURATION_GREEN, NULL);
 		APP_ERROR_CHECK(err_code);
 	}
@@ -297,19 +321,54 @@ static void timer_handler (void *p_context)
 	{
 		currentState = YELLOW_STATE;											// New state: yellow
 		nrf_gpio_pin_set(LED_YELLOW);											// Turn on green light
+		nrf_gpio_pin_set(LED_RED_PEDESTRIAN);									// Turn on pedestrian red light
 		err_code = app_timer_start ( timer, DURATION_YELLOW, NULL);
 		APP_ERROR_CHECK(err_code);
 	}
 	else if (lastState == YELLOW_STATE)
 	{
 		currentState = RED_STATE;												// New state: red
-		nrf_gpio_pin_set(LED_RED);												// Turn on red light
+		nrf_gpio_pin_set(LED_RED);												// Turn on red lightb
+		nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);									// Turn on pedestrian green light
 		err_code = app_timer_start ( timer, DURATION_RED, NULL);
+		APP_ERROR_CHECK(err_code);
+		err_code = app_timer_start ( timer_pedestrian, (DURATION_RED-DURATION_BLINKY), NULL); // Start timer in order to start pedestrian blinky state
 		APP_ERROR_CHECK(err_code);
 	}
 
 	lastState = currentState;
 	lastStateTicks = app_timer_cnt_get();
+}
+
+// Handle the pedestrian timer: start blinky pedestrian green light
+static void timer_handler_pedestrian (void *p_context)
+{
+	ret_code_t err_code;
+
+	static int blink_cont = 0;													// Number of cycles of turning on-turning off
+
+	if (blink_cont < 20)
+	{
+		if ((blink_cont%2)==0)
+		{
+			nrf_gpio_pin_clear(LED_GREEN_PEDESTRIAN);
+			blink_cont++;
+			err_code = app_timer_start ( timer_pedestrian, APP_TIMER_TICKS(250), NULL);
+			APP_ERROR_CHECK(err_code);
+
+		}
+		else if ((blink_cont%2)==1)
+		{
+			nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);
+			blink_cont++;
+			err_code = app_timer_start ( timer_pedestrian, APP_TIMER_TICKS(250), NULL);
+			APP_ERROR_CHECK(err_code);
+		}
+	}
+	else
+	{
+		blink_cont = 0;
+	}
 }
 
 // Timer initialization
@@ -319,6 +378,9 @@ static void timers_init(void)
     APP_ERROR_CHECK(err_code);
 
     err_code = app_timer_create	( &timer, APP_TIMER_MODE_SINGLE_SHOT, timer_handler );
+    APP_ERROR_CHECK(err_code);
+
+    err_code = app_timer_create ( &timer_pedestrian, APP_TIMER_MODE_SINGLE_SHOT, timer_handler_pedestrian );
     APP_ERROR_CHECK(err_code);
 }
 
