@@ -1,4 +1,4 @@
-  
+# **Nordic Semiconductor nRF52 beacons** #  
 
 MOTAM project uses nRF52840 PDK by Nordic Semiconductor in order to improve some aspects of the developed beacons like more security or a longer coverage range.
 
