@@ -1,0 +1,77 @@
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number: 18245865310900892540 (0xfd3655d45bdeb37c)
+    Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=ES, ST=Malaga, L=Malaga, O=MOTAM, CN=CA de MOTAM
+        Validity
+            Not Before: Feb  7 10:35:37 2019 GMT
+            Not After : Feb  7 10:35:37 2020 GMT
+        Subject: C=ES, ST=Malaga, L=Malaga, O=MOTAM, OU=normal, CN=2452FGG/emailAddress=normal@motam.es
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:aa:85:1f:1a:59:ac:62:a9:bb:c5:0d:07:9a:fb:
+                    f7:32:c4:ad:fe:b4:d9:2e:c0:da:26:48:98:db:83:
+                    b9:6b:d2:13:4a:8c:dc:af:4b:c9:0d:52:cf:5c:40:
+                    52:31:64:95:1d:d6:e3:69:2a:21:b5:98:e1:77:a3:
+                    f1:0f:14:f3:b1:db:ff:75:dc:c6:e2:5b:dd:ea:17:
+                    38:fe:8b:7d:82:ee:92:41:4a:ba:d7:df:8b:ee:8f:
+                    4a:fb:6f:33:81:2b:2f:fa:0f:62:bf:12:12:c5:d1:
+                    52:3f:cb:30:68:18:07:a2:b7:4c:17:8d:3c:a0:b9:
+                    bf:f3:1c:8b:58:a8:9c:3a:69:b3:b5:c2:50:d9:d8:
+                    4e:54:0d:50:6e:f4:88:8b:b3:52:cd:d5:7e:a1:17:
+                    1b:c0:81:8b:b1:2e:cf:b6:85:5f:06:77:73:64:44:
+                    5a:44:0a:c8:5c:fa:c1:9a:ba:6e:0c:b6:7b:4f:60:
+                    b7:e3:b2:95:65:dc:af:bd:9a:4b:e8:0c:cb:61:2f:
+                    19:e1:ff:f8:c3:82:94:11:36:d7:d8:e5:32:87:3d:
+                    d6:53:6c:64:cd:73:25:df:62:76:12:c8:58:69:9e:
+                    cc:23:b2:8b:3c:b0:9c:1e:6f:8e:6f:1e:e5:69:fb:
+                    2a:76:39:dd:d6:44:96:4b:a9:aa:33:41:e8:af:d5:
+                    02:49
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:FALSE
+            X509v3 Key Usage: 
+                Digital Signature, Non Repudiation, Key Encipherment
+            X509v3 Subject Alternative Name: 
+                IP Address:192.168.0.1
+    Signature Algorithm: sha256WithRSAEncryption
+         14:94:eb:ce:e8:32:7d:bb:70:c3:63:99:93:a1:df:fb:99:02:
+         28:d2:d3:94:df:e2:50:f1:0e:ec:9a:69:df:e4:db:8c:8b:57:
+         fd:e5:79:4d:2d:3b:31:81:b4:21:2c:1d:ce:de:c1:56:4a:d2:
+         2c:69:c9:ad:49:0e:8e:da:2f:62:7d:e0:f9:d0:a3:e3:4e:7c:
+         a6:e7:09:07:07:31:3e:f1:64:99:b7:d3:01:19:eb:81:68:e2:
+         e3:51:9d:9d:4a:c1:62:0a:6d:2b:ea:b8:56:04:4e:d9:f5:a1:
+         d9:93:5a:b1:5c:7f:44:64:1b:e4:ff:22:90:66:70:88:19:79:
+         64:ff:24:ff:27:38:54:b7:af:78:cf:12:26:6d:5d:8f:a4:12:
+         b6:b0:f2:d4:df:e6:d5:46:4f:2a:32:47:fd:bf:2b:88:8c:3c:
+         10:37:c6:c2:01:16:f6:96:dc:60:c2:96:57:f5:32:eb:3a:d4:
+         93:95:49:c9:1a:87:45:96:c8:19:04:ce:28:93:2e:5b:6a:94:
+         50:8f:b0:a9:b1:97:e5:b5:1a:cc:ae:7a:f2:3d:55:47:8c:dc:
+         e3:ac:2d:72:99:91:41:86:79:7d:cf:26:33:12:84:41:a1:e3:
+         a9:14:af:9d:0a:6b:22:1e:20:94:5d:57:30:8a:84:41:6a:73:
+         d9:a1:7e:e5
+-----BEGIN CERTIFICATE-----
+MIIDgTCCAmkCCQD9NlXUW96zfDANBgkqhkiG9w0BAQsFADBVMQswCQYDVQQGEwJF
+UzEPMA0GA1UECBMGTWFsYWdhMQ8wDQYDVQQHEwZNYWxhZ2ExDjAMBgNVBAoTBU1P
+VEFNMRQwEgYDVQQDEwtDQSBkZSBNT1RBTTAeFw0xOTAyMDcxMDM1MzdaFw0yMDAy
+MDcxMDM1MzdaMIGCMQswCQYDVQQGEwJFUzEPMA0GA1UECBMGTWFsYWdhMQ8wDQYD
+VQQHEwZNYWxhZ2ExDjAMBgNVBAoTBU1PVEFNMQ8wDQYDVQQLEwZub3JtYWwxEDAO
+BgNVBAMTBzI0NTJGR0cxHjAcBgkqhkiG9w0BCQEWD25vcm1hbEBtb3RhbS5lczCC
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKqFHxpZrGKpu8UNB5r79zLE
+rf602S7A2iZImNuDuWvSE0qM3K9LyQ1Sz1xAUjFklR3W42kqIbWY4Xej8Q8U87Hb
+/3XcxuJb3eoXOP6LfYLukkFKutffi+6PSvtvM4ErL/oPYr8SEsXRUj/LMGgYB6K3
+TBeNPKC5v/Mci1ionDpps7XCUNnYTlQNUG70iIuzUs3VfqEXG8CBi7Euz7aFXwZ3
+c2REWkQKyFz6wZq6bgy2e09gt+OylWXcr72aS+gMy2EvGeH/+MOClBE219jlMoc9
+1lNsZM1zJd9idhLIWGmezCOyizywnB5vjm8e5Wn7KnY53dZElkupqjNB6K/VAkkC
+AwEAAaMrMCkwCQYDVR0TBAIwADALBgNVHQ8EBAMCBeAwDwYDVR0RBAgwBocEwKgA
+ATANBgkqhkiG9w0BAQsFAAOCAQEAFJTrzugyfbtww2OZk6Hf+5kCKNLTlN/iUPEO
+7Jpp3+TbjItX/eV5TS07MYG0ISwdzt7BVkrSLGnJrUkOjtovYn3g+dCj4058pucJ
+BwcxPvFkmbfTARnrgWji41GdnUrBYgptK+q4VgRO2fWh2ZNasVx/RGQb5P8ikGZw
+iBl5ZP8k/yc4VLeveM8SJm1dj6QStrDy1N/m1UZPKjJH/b8riIw8EDfGwgEW9pbc
+YMKWV/Uy6zrUk5VJyRqHRZbIGQTOKJMuW2qUUI+wqbGX5bUazK568j1VR4zc46wt
+cpmRQYZ5fc8mMxKEQaHjqRSvnQprIh4glF1XMIqEQWpz2aF+5Q==
+-----END CERTIFICATE-----
