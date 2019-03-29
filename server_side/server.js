@@ -1,8 +1,8 @@
 /********************************************************
 * NodeJS server that reads the road side unit IMEI sent *
-* by NB-IoT and responds with some JSON frame           *
+* by NB-IoT and responds with MOTAM JSON fram           *
 * MOTAM project: https://www.nics.uma.es/projects/motam *
-* Created by Manuel Montenegro, Mar 06, 2019.    V. 0.1 *
+* Created by Manuel Montenegro, Mar 29, 2019.    V. 0.2 *
 ********************************************************/
 
 const https = require("https"), express=require("express"),
@@ -25,7 +25,7 @@ function getResponseByImei (imei) {
   let infoPanelJson = {"type":"infoPanel","specificData":{"info":"Trabajos de poda en arcen izquierdo"}};
 
   if (imei == "34121343Z") {
-    if (Math.random()<0.5) {
+    if (!emergencia) {
       return JSON.stringify(trafficLightConfJson);
     } else {
       return JSON.stringify(trafficLightEmergencyJson);
@@ -38,10 +38,27 @@ function getResponseByImei (imei) {
 
 
 const app = express();
+var emergencia = false;
 
-app.use((req, res) => {
-  res.writeHead(200);
-  res.end( getResponseByImei (req.socket.getPeerCertificate().subject.CN) );
+app.get('/', function (req,res) {
+    res.writeHead(200);
+    let respuesta = getResponseByImei (req.socket.getPeerCertificate().subject.CN); 
+    console.log(respuesta);
+    res.end( respuesta);
+});
+
+app.get('/emergencia', function (req,res) {
+    console.log( "antes " + emergencia);
+    emergencia = true;
+    console.log(" despues " + emergencia);
+    res.end("ok");
+});
+
+app.get('/normal', function (req,res) {
+    console.log( "antes " + emergencia);
+    emergencia = false;
+    console.log(" despues " + emergencia);
+    res.end("ok");
 });
 
 https.createServer(options, app).listen(8080);
