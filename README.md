@@ -16,9 +16,9 @@ Currently, this project uses:
 
   
 
-- nRF5 SDK version 15.2.0
+- nRF5 SDK version 15.3.0
 
-- S140 SoftDevice v6.1.0 API
+- S140 SoftDevice v6.1.1 API
 
 - nRF52840 PDK (PCA10056) and nRF52840 Dongle (PCA10059)
 
@@ -32,8 +32,8 @@ In order to program the device (nRF52840 PDK or Dongle), just use the Programmer
 1. Program the SoftDevice (included in hex folder).
 2. Program the application: PCA10056 hex file for nRF52840 PDK and pca10059 for nRF52840 Dongle.
 
-If you modify the code and you need to recompile the code, put the folders inside nRF52 into the  \nRF5_SDK_15.2.0\examples\ble_peripheral* folder. 
-There are several ways for developing code in nRF52, we have done this with [GCC and Eclipse](https://devzone.nordicsemi.com/tutorials/b/getting-started/posts/development-with-gcc-and-eclipse).
+If you modify the code and you need to recompile the code, put the folders inside nRF52 into the  \nRF5_SDK_15.3.0\MOTAM_apps* folder. 
+There are several ways for developing code in nRF52, we have done this with [SEGGER Embedded Studio for ARM V4.12](https://infocenter.nordicsemi.com/pdf/getting_started_ses.pdf).
 
   
 
