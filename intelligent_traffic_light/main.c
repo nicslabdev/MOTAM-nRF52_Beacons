@@ -1,7 +1,7 @@
 /***************************************************************************************/
 /*
  * intelligent_traffic_light
- * Created by Manuel Montenegro, May 29, 2019.
+ * Created by Manuel Montenegro, Jun 03, 2019.
  * Developed for MOTAM project.
  *
  *  This is a secure connected traffic light. The management connection with LTE-M modem 
@@ -60,12 +60,20 @@
 #define YELLOW_STATE_DURATION                   1                                           // Duration of yellow traffic light state in seconds
 #define GREEN_STATE_DURATION                    5                                           // Duration of green traffic light state in seconds
 #define BLINKY_STATE_DURATION                   1                                           // Duration of blinky state of pedestrian green light
+#define BEACON_UPDATE_INTERVAL                  200                                         // Time interval in what beacon frame is updated (and crypto signature recalculated)
 static uint8_t                                  lastState;                                  // Last traffic light state
 static uint8_t                                  currentState;                               // Current traffic light state
 static uint32_t                                 lastStateTicks;                             // Timers ticks of the last state change
 
 static uint32_t timer_ticks_to_ms (uint32_t ticks);
 static uint8_t current_state_duration ();
+
+// BLE events handler declaration
+static void ble_evt_handler (ble_evt_t const * p_ble_evt, void * p_context);
+static void frame_init (void);
+
+// Crypto signature function declaration
+static void sign_frame ();
 
 
 // ======== BLE configuration ========
@@ -121,10 +129,6 @@ static uint8_t frame [BEACON_FRAME_LENGTH] =                                    
             DEFAULT_SIGN
         };
 
-// BLE events handler declaration
-static void ble_evt_handler (ble_evt_t const * p_ble_evt, void * p_context);
-static void frame_init (void);
-
 // Function for initializing the BLE stack
 static void ble_stack_init(void)
 {
@@ -150,10 +154,10 @@ static void ble_stack_init(void)
 // Function for initializing the Advertising functionality
 static void advertising_init(void)
 {
-	ret_code_t err_code;
+    ret_code_t err_code;
 
     // Set the advertising parameters
-    m_adv_params.properties.type = BLE_GAP_ADV_TYPE_EXTENDED_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED;  // Extended advertising
+    m_adv_params.properties.type= BLE_GAP_ADV_TYPE_EXTENDED_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED;  // Extended advertising
     m_adv_params.p_peer_addr    = NULL;                                                    // Undirected advertisement
     m_adv_params.interval       = ADV_INTERVAL;                                            // Time between advertisements
     m_adv_params.duration       = BLE_GAP_ADV_TIMEOUT_GENERAL_UNLIMITED;                   // Never time out
@@ -165,7 +169,6 @@ static void advertising_init(void)
     // Set the advertising data
     m_adv_data.adv_data.len = 0;                                                            // Still no data on frame
     m_adv_data.adv_data.p_data = m_enc_advdata_1;
-    frame_init();
 
     err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data, &m_adv_params);
     APP_ERROR_CHECK(err_code);
@@ -174,6 +177,7 @@ static void advertising_init(void)
 // Build beacon frame with MOTAM beacon structure
 static void frame_init (void)
 {
+    sign_frame();                                                                           // Generate ECDSA signature of frame and include it on it
     memset(m_adv_data.adv_data.p_data, 0, BLE_GAP_ADV_SET_DATA_SIZE_EXTENDED_MAX_SUPPORTED);
     m_adv_data.adv_data.len = sizeof(frame);
     memcpy (m_adv_data.adv_data.p_data, frame, sizeof(frame));
@@ -250,6 +254,9 @@ static void radio_active_handler ( bool radio_active )
         advertising_update (frame, sizeof(frame));
     }
 }
+
+
+// Function for updating 
 
 
 // ======== Crypto configuration ========
@@ -330,13 +337,6 @@ static void sign_frame ()
     );
     APP_ERROR_CHECK(err_code);
 
-
-    NRF_LOG_RAW_INFO("SIGN Frame data:\r\n");
-    NRF_LOG_RAW_HEXDUMP_INFO(frame_data,frame_data_size);
-    NRF_LOG_RAW_INFO("SIGN Generated hash:\r\n");
-    NRF_LOG_RAW_HEXDUMP_INFO(hash_digest,digest_size);
-
-
     // Generate the signature of data
     signature_size = sizeof(signature);
     err_code = nrf_crypto_ecdsa_sign(NULL,
@@ -347,8 +347,7 @@ static void sign_frame ()
                                      &signature_size);
     APP_ERROR_CHECK(err_code);
 
-    NRF_LOG_RAW_INFO("Generated signature:\r\n");
-    NRF_LOG_RAW_HEXDUMP_INFO(signature,signature_size);
+    memcpy(&frame[BEACON_FRAME_LENGTH-NRF_CRYPTO_ECDSA_SECP256K1_SIGNATURE_SIZE],signature,signature_size);
 }
 
 
@@ -372,6 +371,7 @@ static void sign_frame ()
 
 APP_TIMER_DEF (timer);                                                                      // Timer instance for traffic
 APP_TIMER_DEF (timer_pedestrian);                                                           // Timer instance for pedestrian blinky green light
+APP_TIMER_DEF (timer_frame_update);                                                         // Timer instance for adv frame update (change state, recalculate crypto signature...)
 
 // Put all LEDs to low
 static void pins_clear ()
@@ -504,6 +504,21 @@ static void timer_handler_pedestrian (void *p_context)
     }
 }
 
+// Handle the frame_update time: the frame is updated periodically and the crypto signature calculated
+static void timer_handler_frame_update (void *p_context)
+{
+    static uint8_t old_timeout = DEFAULT_TIMELEFT;
+    static uint8_t old_currentState = DEFAULT_STATE;
+    uint8_t timeout = current_state_duration() - (timer_ticks_to_ms (app_timer_cnt_diff_compute (app_timer_cnt_get(),lastStateTicks))/1000);
+    if (currentState != old_currentState || timeout != old_timeout) 
+    {
+        frame[21] = currentState;
+        frame[22] = timeout;
+        sign_frame();
+        old_timeout = timeout;
+        old_currentState = currentState;
+    }
+}
 
 // Timer initialization
 static void timers_init(void)
@@ -516,12 +531,17 @@ static void timers_init(void)
 
     err_code = app_timer_create ( &timer_pedestrian, APP_TIMER_MODE_SINGLE_SHOT, timer_handler_pedestrian );
     APP_ERROR_CHECK(err_code);
+
+    err_code = app_timer_create ( &timer_frame_update, APP_TIMER_MODE_REPEATED, timer_handler_frame_update );
+    APP_ERROR_CHECK(err_code);
 }
 
 // Start the execution of concatenated timers
 static void timers_start (void)
 {
+    ret_code_t err_code;
     timer_handler (NULL);
+    err_code = app_timer_start ( timer_frame_update, APP_TIMER_TICKS(BEACON_UPDATE_INTERVAL), NULL);
 }
 
 // Convert timer ticks to miliseconds
@@ -619,17 +639,15 @@ int main(void)
     ble_stack_init();
     advertising_init();
     radio_notification_init();
-
     mem_init();
     crypto_init();                                                                          // Crypto_init must be called AFTER ble_stack_init()!
 
     // Start execution.
     lastState = YELLOW_STATE;                                                               // Initial traffic light state
-    timers_start();
+    frame_init();
     advertising_start();
+    timers_start();
     print_beacon_info();
-
-    sign_frame();                                                                           // Generate ECDSA signature of frame and include it on it
 
     // Enter main loop.
     for (;;)
