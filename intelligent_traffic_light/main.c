@@ -1,10 +1,12 @@
 /***************************************************************************************/
 /*
  * intelligent_traffic_light
- * Created by Manuel Montenegro, Apr 22, 2019.
+ * Created by Manuel Montenegro, May 29, 2019.
  * Developed for MOTAM project.
  *
- *  This is a intelligent traffic light.
+ *  This is a secure connected traffic light. The management connection with LTE-M modem 
+ *  (Particle Boron LTE) is over serial pins. The traffic light state is broadcasted over
+ *  long range BLE. BLE authentication has been developed using CC310 crypto functions.
  *
  *  This code has been developed for Nordic Semiconductor nRF52840 PDK & nRF52840 dongle.
 */
@@ -16,7 +18,10 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "sdk_common.h"
+
 #include "nrf.h"
+#include "nrf_assert.h"
 #include "nrf_pwr_mgmt.h"
 #include "nrf_gpio.h"
 #include "nrf_delay.h"
@@ -36,6 +41,13 @@
 #include "app_util.h"
 #include "app_timer.h"
 
+#include "mem_manager.h"
+
+#include "nrf_crypto.h"
+#include "nrf_crypto_error.h"
+#include "nrf_crypto_ecc.h"
+#include "nrf_crypto_ecdsa.h"
+
 
 // ======== Global configuration and functions ========
 
@@ -44,10 +56,10 @@
 #define GREEN_STATE                             0x03                                        // Identifier of Green traffic light state
 #define EMERGENCY_RED_STATE                     0x04                                        // Identifier of red state due to a emergency vehicle is near
 #define EMERGENCY_GREEN_STATE                   0x05                                        // Identifier of green state due to a emergency vehicle is near
-#define RED_STATE_DURATION                      30                                          // Duration of red traffic light state in seconds (MINIMUM VALUE: 5 SECONDS)
-#define YELLOW_STATE_DURATION                   5                                           // Duration of yellow traffic light state in seconds
-#define GREEN_STATE_DURATION                    30                                          // Duration of green traffic light state in seconds
-#define BLINKY_STATE_DURATION                   5                                           // Duration of blinky state of pedestrian green light
+#define RED_STATE_DURATION                      5                                           // Duration of red traffic light state in seconds (MINIMUM VALUE: 5 SECONDS)
+#define YELLOW_STATE_DURATION                   1                                           // Duration of yellow traffic light state in seconds
+#define GREEN_STATE_DURATION                    5                                           // Duration of green traffic light state in seconds
+#define BLINKY_STATE_DURATION                   1                                           // Duration of blinky state of pedestrian green light
 static uint8_t                                  lastState;                                  // Last traffic light state
 static uint8_t                                  currentState;                               // Current traffic light state
 static uint32_t                                 lastStateTicks;                             // Timers ticks of the last state change
@@ -58,17 +70,28 @@ static uint8_t current_state_duration ();
 
 // ======== BLE configuration ========
 
-// MOTAM Beacon static parameters
-#define STATIC_PARAMETERS_LENGTH                0x12                                        // Length of ADV_DATA_TYPE, MOTAM_ID, LATITUDE AND LONGITUDE
+// MOTAM Beacon default advertising frame
+#define BEACON_LENGTH_FIELD                     86                                          // Length of advertising data (see BLE documentation)
 #define ADV_DATA_TYPE                           0xFF                                        // Advertising data type (0xFF -> Manufacturer specific data)
-#define MOTAM_ID                                0xBE, 0xDE                                  // MOTAM identifier (DEphisit BEacon in little endian)
+#define MOTAM_ID                                0xBE, 0x5E                                  // MOTAM identifier (5Ecure BEacon)
+#define DEFAULT_TIMESTAMP                       0x00, 0x00, 0x00, 0x00                      // Default UNIX timestamp
+#define BEACON_TYPE                             0x04                                        // Type of MOTAM beacon (0x04 -> Intelligent Traffic Light)
 #define LATITUDE                                0xA9, 0xDA, 0xE3, 0x41                      // GPS latitude of the beacon (float in little endian)
 #define LONGITUDE                               0xBC, 0x98, 0x82, 0xC1                      // GPS longitude of the beacon (float in little endian)
+#define DEVICE_ID                               LATITUDE, LONGITUDE                         // Device ID on traffic light corresponds the gps coordinates
 #define DIRECTION_FROM                          0x23, 0X00                                  // From direction that applies (35)
 #define DIRECTION_TO                            0x18, 0x01                                  // To direction that applies (280)
-#define BEACON_TYPE                             0x04                                        // Type of MOTAM beacon (0x04 -> Intelligent Traffic Light)
 #define DEFAULT_STATE                           0xFF                                        // Current state (0x00 red, 0x01 yellow, 0x02 green, 0xFF undeterminated)
-#define DEFAULT_TIMEOUT                         0x00                                        // Time left for next state (0x00 -> no timeout)
+#define DEFAULT_TIMELEFT                        0X00                                        // Time left for next state (0x00 -> no timeout)
+                                                                                            // Signature of default frame (SECP256K1)
+#define DEFAULT_SIGN                            0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, \
+                                                0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, \
+                                                0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, \
+                                                0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, \
+                                                0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, \
+                                                0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, \
+                                                0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, \
+                                                0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51, 0x51
 
 // BLE configuration parameters
 #define APP_BLE_CONN_CFG_TAG                    1                                           // Tag that identifies the BLE configuration of the SoftDevice
@@ -81,19 +104,22 @@ static uint8_t                                  m_adv_handle = BLE_GAP_ADV_SET_H
 static uint8_t                                  m_enc_advdata_1 [BLE_GAP_ADV_SET_DATA_SIZE_EXTENDED_MAX_SUPPORTED]; // Buffer for storing encoded advertising data
 static uint8_t                                  m_enc_advdata_2 [BLE_GAP_ADV_SET_DATA_SIZE_EXTENDED_MAX_SUPPORTED]; // Buffer for storing encoded advertising data
 
-static uint8_t frame [] =                                                                   // Intelligent traffic light default frame
-	{
-		STATIC_PARAMETERS_LENGTH,
-		ADV_DATA_TYPE,
-		MOTAM_ID,
-		LATITUDE,
-		LONGITUDE,
-		DIRECTION_FROM,
-		DIRECTION_TO,
-		BEACON_TYPE,
-		DEFAULT_STATE,
-		DEFAULT_TIMEOUT
-	};
+// Frame that will be broadcasted by BLE advertising
+#define BEACON_FRAME_LENGTH                     BEACON_LENGTH_FIELD + 1                     // Length of MOTAM advertising frame
+static uint8_t frame [BEACON_FRAME_LENGTH] =                                                // Intelligent traffic light broadcast frame
+        {
+            BEACON_LENGTH_FIELD,
+            ADV_DATA_TYPE,
+            MOTAM_ID,
+            DEFAULT_TIMESTAMP,
+            BEACON_TYPE,
+            DEVICE_ID,
+            DIRECTION_FROM,
+            DIRECTION_TO,
+            DEFAULT_STATE,
+            DEFAULT_TIMELEFT,
+            DEFAULT_SIGN
+        };
 
 // BLE events handler declaration
 static void ble_evt_handler (ble_evt_t const * p_ble_evt, void * p_context);
@@ -127,17 +153,14 @@ static void advertising_init(void)
 	ret_code_t err_code;
 
     // Set the advertising parameters
-//    m_adv_params.properties.type = BLE_GAP_ADV_TYPE_EXTENDED_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED;  // Extended advertising
-    m_adv_params.properties.type = BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED; // BLE 4
-    m_adv_params.p_peer_addr     = NULL;                                                    // Undirected advertisement
-    m_adv_params.interval        = ADV_INTERVAL;                                            // Time between advertisements
-    m_adv_params.duration        = BLE_GAP_ADV_TIMEOUT_GENERAL_UNLIMITED;                   // Never time out
-    m_adv_params.max_adv_evts	 = 0;                                                       // No limit of advertising events
-    m_adv_params.filter_policy   = BLE_GAP_ADV_FP_ANY;                                      // Allow scan request from any device
-    m_adv_params.primary_phy 	 = BLE_GAP_PHY_CODED;                                       // Long range codification
-    m_adv_params.secondary_phy   = BLE_GAP_PHY_CODED;                                       // Long range codification
-//    m_adv_params.primary_phy 	 = BLE_GAP_PHY_1MBPS;                                       // BLE 4 codification
-//    m_adv_params.secondary_phy = BLE_GAP_PHY_1MBPS;                                       // BLE 4 codification
+    m_adv_params.properties.type = BLE_GAP_ADV_TYPE_EXTENDED_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED;  // Extended advertising
+    m_adv_params.p_peer_addr    = NULL;                                                    // Undirected advertisement
+    m_adv_params.interval       = ADV_INTERVAL;                                            // Time between advertisements
+    m_adv_params.duration       = BLE_GAP_ADV_TIMEOUT_GENERAL_UNLIMITED;                   // Never time out
+    m_adv_params.max_adv_evts   = 0;                                                       // No limit of advertising events
+    m_adv_params.filter_policy  = BLE_GAP_ADV_FP_ANY;                                      // Allow scan request from any device
+    m_adv_params.primary_phy    = BLE_GAP_PHY_CODED;                                       // Long range codification
+    m_adv_params.secondary_phy  = BLE_GAP_PHY_CODED;                                       // Long range codification
 
     // Set the advertising data
     m_adv_data.adv_data.len = 0;                                                            // Still no data on frame
@@ -224,28 +247,123 @@ static void radio_active_handler ( bool radio_active )
 {
     if (radio_active == false)
     {
-        uint8_t timeout = current_state_duration() - (timer_ticks_to_ms (app_timer_cnt_diff_compute (app_timer_cnt_get(),lastStateTicks))/1000);
-        frame[17] = currentState;
-        frame[18] = timeout;
         advertising_update (frame, sizeof(frame));
     }
+}
+
+
+// ======== Crypto configuration ========
+
+// Intelligent Traffic Light private key in byte array format
+static const uint8_t private_key_byte_array [] =
+{
+    0x80, 0xD2, 0xEF, 0x9D, 0x30, 0x4D, 0x6A, 0x84,
+    0x04, 0x53, 0x00, 0xFA, 0x4A, 0x61, 0x46, 0xB3,
+    0x7D, 0xB2, 0x19, 0xCA, 0x2F, 0x9D, 0x25, 0x52,
+    0x75, 0xCA, 0x62, 0x58, 0x24, 0x43, 0xC5, 0x74,
+};
+
+
+// Intelligent Traffic Light public key in byte array format
+static const uint8_t public_key_byte_array[] =
+{
+    0x40, 0xCD, 0xA5, 0xA4, 0xFF, 0x1E, 0xA3, 0xAE,
+    0xCC, 0x67, 0x8E, 0xED, 0xF6, 0x36, 0x34, 0x9D,
+    0x5B, 0x2D, 0xB7, 0x86, 0xAC, 0xA0, 0xD6, 0xA0,
+    0xFB, 0x0F, 0xC9, 0xAE, 0x3A, 0x39, 0x14, 0x34,
+    0xDE, 0x52, 0xEE, 0xAC, 0xA8, 0xE0, 0xCD, 0xC3,
+    0x0C, 0xFA, 0xC6, 0xCF, 0x4D, 0xBF, 0x54, 0xDC,
+    0x9F, 0x43, 0x9A, 0xE8, 0x9A, 0x48, 0xA0, 0x8D,
+    0x87, 0xB1, 0xF1, 0x95, 0xE0, 0x50, 0x87, 0x45,
+};
+
+
+
+static nrf_crypto_ecc_private_key_t             private_key;                                // Intelligent Traffic Light private key in internal representation
+static nrf_crypto_ecc_public_key_t              public_key;                                 // Intelligent Traffic Light public key in internal representation
+static nrf_crypto_ecdsa_secp256k1_signature_t   signature;                                  // Advertising frame data ECDSA signature
+static size_t                                   signature_size;
+
+// Function for initializing the crypto module
+static void crypto_init ()
+{
+    ret_code_t err_code;
+
+    err_code = nrf_crypto_init();
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_crypto_ecc_private_key_from_raw
+        (
+        &g_nrf_crypto_ecc_secp256k1_curve_info,
+        &private_key,
+        private_key_byte_array,
+        sizeof(private_key_byte_array)
+        );
+
+    APP_ERROR_CHECK(err_code);
+}
+
+
+// Function for generating ECDSA advertising signature and include it on the frame
+static void sign_frame ()
+{
+    ret_code_t err_code;
+
+    nrf_crypto_hash_context_t hash_context;
+    nrf_crypto_hash_sha256_digest_t hash_digest;
+    size_t digest_size = sizeof(hash_digest);
+
+    // Not all the frame must be signed. Discarding the signature field of advertising frame...
+    uint8_t frame_data [BEACON_FRAME_LENGTH - NRF_CRYPTO_ECDSA_SECP256K1_SIGNATURE_SIZE];
+    uint32_t frame_data_size = sizeof(frame_data);
+    memcpy(frame_data,frame,frame_data_size);
+
+    // It's necessary generating the hash of data before of sign
+    err_code = nrf_crypto_hash_calculate
+    (
+        &hash_context,                                                                      // Context
+        &g_nrf_crypto_hash_sha256_info,                                                     // Info structure
+        frame_data,                                                                         // Input buffer
+        frame_data_size,                                                                    // Input size
+        hash_digest,                                                                        // Result buffer
+        &digest_size                                                                        // Result size
+    );
+    APP_ERROR_CHECK(err_code);
+
+
+    NRF_LOG_RAW_INFO("SIGN Frame data:\r\n");
+    NRF_LOG_RAW_HEXDUMP_INFO(frame_data,frame_data_size);
+    NRF_LOG_RAW_INFO("SIGN Generated hash:\r\n");
+    NRF_LOG_RAW_HEXDUMP_INFO(hash_digest,digest_size);
+
+
+    // Generate the signature of data
+    signature_size = sizeof(signature);
+    err_code = nrf_crypto_ecdsa_sign(NULL,
+                                     &private_key,
+                                     hash_digest,
+                                     digest_size,
+                                     signature,
+                                     &signature_size);
+    APP_ERROR_CHECK(err_code);
+
+    NRF_LOG_RAW_INFO("Generated signature:\r\n");
+    NRF_LOG_RAW_HEXDUMP_INFO(signature,signature_size);
 }
 
 
 // ======== GPIO and timers initialization ========
 
 // GPIO LED parameters
-#define LED_RED                                 NRF_GPIO_PIN_MAP(1,10)
-#define LED_YELLOW                              NRF_GPIO_PIN_MAP(1,13)
-#define LED_GREEN                               NRF_GPIO_PIN_MAP(1,15)
+#define LED_RED                                 NRF_GPIO_PIN_MAP(0,13)
+#define LED_YELLOW                              NRF_GPIO_PIN_MAP(0,14)
+#define LED_GREEN                               NRF_GPIO_PIN_MAP(0,15)
+//#define LED_RED                                 NRF_GPIO_PIN_MAP(1,10)
+//#define LED_YELLOW                              NRF_GPIO_PIN_MAP(1,13)
+//#define LED_GREEN                               NRF_GPIO_PIN_MAP(1,15)
 #define LED_RED_PEDESTRIAN 			NRF_GPIO_PIN_MAP(0,29)
 #define LED_GREEN_PEDESTRIAN			NRF_GPIO_PIN_MAP(0,31)
-#define PIN_CHANGE_STATE                        NRF_GPIO_PIN_MAP(0,02)                      // GPIO that will capture change state pulses
-#if defined (BOARD_PCA10056)
-    #define BTN_CHANGE_STATE                    NRF_GPIO_PIN_MAP(0,11)                      // Button 1 on nRF52840 DK
-#elif defined (BOARD_PCA10059)
-    #define BTN_CHANGE_STATE                    NRF_GPIO_PIN_MAP(1,06)                      // Button 1 on nRF52840 Dongle
-#endif
+
 
 #define DURATION_RED 				APP_TIMER_TICKS(RED_STATE_DURATION*1000)    // Duration of red state in milliseconds
 #define DURATION_YELLOW 			APP_TIMER_TICKS(YELLOW_STATE_DURATION*1000) // Duration of yellow state in milliseconds
@@ -254,8 +372,6 @@ static void radio_active_handler ( bool radio_active )
 
 APP_TIMER_DEF (timer);                                                                      // Timer instance for traffic
 APP_TIMER_DEF (timer_pedestrian);                                                           // Timer instance for pedestrian blinky green light
-APP_TIMER_DEF (timer_change_state);                                                         // Timer instance for change state button
-APP_TIMER_DEF (timer_btn_debounce);
 
 // Put all LEDs to low
 static void pins_clear ()
@@ -267,38 +383,6 @@ static void pins_clear ()
     nrf_gpio_pin_clear(LED_GREEN_PEDESTRIAN);
 }
 
-// Handler triggered with button pulsation for manual configuration of traffic light
-void btn_change_state_handler(nrf_drv_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
-{
-    ret_code_t err_code;
-
-    static uint8_t buttonPressedCont = 0;                                                   // Number of times button has been pressed without timeout reached
-
-    // Implementation of button debounce filter
-    static uint8_t debounceTimeOutReached = true;                                           
-    err_code = app_timer_start ( timer_btn_debounce, APP_TIMER_TICKS(200), &debounceTimeOutReached);
-    APP_ERROR_CHECK(err_code);
-    if (!debounceTimeOutReached)
-    {
-        return;                                                                             // If the function is called before 200ms, its a button rebounce
-    }
-    debounceTimeOutReached = false;
-
-
-    // If timeout was reached previously...
-    if (buttonPressedCont != 0)
-    {
-        err_code = app_timer_stop (timer_change_state);
-        APP_ERROR_CHECK(err_code);
-    }
-
-    buttonPressedCont++;
-
-    err_code = app_timer_start ( timer_change_state, APP_TIMER_TICKS(750), &buttonPressedCont);
-    APP_ERROR_CHECK(err_code);
-
-        
-}
 
 // GPIO ports initialization
 static void gpio_init()
@@ -350,21 +434,6 @@ static void gpio_init()
     );
 
     pins_clear();                                                                           // Set all leds to low
-
-    ret_code_t err_code = nrf_drv_gpiote_init();
-    APP_ERROR_CHECK(err_code);
-
-    nrf_drv_gpiote_in_config_t conf = GPIOTE_CONFIG_IN_SENSE_HITOLO(true);
-    conf.pull = NRF_GPIO_PIN_PULLUP;
-
-    err_code = nrf_drv_gpiote_in_init(BTN_CHANGE_STATE, &conf, btn_change_state_handler);   // Set up Button for manually change state
-    APP_ERROR_CHECK(err_code);
-
-    err_code = nrf_drv_gpiote_in_init(PIN_CHANGE_STATE, &conf, btn_change_state_handler);   // Set up Button for manually change state
-    APP_ERROR_CHECK(err_code);
-
-    nrf_drv_gpiote_in_event_enable(BTN_CHANGE_STATE, true);
-    nrf_drv_gpiote_in_event_enable(PIN_CHANGE_STATE, true);
 }
 
 // Handle the timers: this will change the state of the traffic light
@@ -395,9 +464,9 @@ static void timer_handler (void *p_context)
         currentState = RED_STATE;                                                           // New state: red
         nrf_gpio_pin_set(LED_RED);                                                          // Turn on red lightb
         nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);                                             // Turn on pedestrian green light
-        err_code = app_timer_start ( timer, DURATION_RED, NULL);
+        err_code = app_timer_start (timer, DURATION_RED, NULL);
         APP_ERROR_CHECK(err_code);
-        err_code = app_timer_start ( timer_pedestrian, (DURATION_RED-DURATION_BLINKY), NULL);   // Start timer in order to start pedestrian blinky state
+        err_code = app_timer_start (timer_pedestrian, (DURATION_RED-DURATION_BLINKY), NULL);// Start timer in order to start pedestrian blinky state
         APP_ERROR_CHECK(err_code);
     }
 
@@ -435,49 +504,6 @@ static void timer_handler_pedestrian (void *p_context)
     }
 }
 
-// Handle the change state button timer: one pulsation normal state, two pulsations green emergency state, three pulsations red emergency state
-static void timer_handler_change_state (void * p_context)
-{
-    ret_code_t err_code;
-
-    uint8_t * buttonPressedContPointer = p_context;
-
-    // Normal state
-    if (*buttonPressedContPointer == 1)
-    {
-        lastState = YELLOW_STATE;                                                           // Initial traffic light state
-        timer_handler(NULL);
-    }
-    // Green emergency state
-    else if (*buttonPressedContPointer == 2)
-    {
-        currentState = EMERGENCY_GREEN_STATE;
-        app_timer_stop(timer);
-        app_timer_stop(timer_pedestrian);
-        pins_clear();                                                                       // Set all leds to low
-        nrf_gpio_pin_set(LED_GREEN);                                                        // Turn on green light
-        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
-    }
-    // Red emergency state
-    else if (*buttonPressedContPointer == 3)
-    {
-        currentState = EMERGENCY_RED_STATE;
-        app_timer_stop(timer);
-        app_timer_stop(timer_pedestrian);
-        pins_clear();                                                                       // Set all leds to low
-        nrf_gpio_pin_set(LED_RED);                                                          // Turn on green light
-        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
-    }
-
-    *buttonPressedContPointer = 0;                                                          
-}
-
-// Implementation of button rebounce filter
-static void timer_handler_btn_debounce (void *p_context)
-{
-    uint8_t * timeout = p_context;
-    *timeout = true;
-}
 
 // Timer initialization
 static void timers_init(void)
@@ -489,12 +515,6 @@ static void timers_init(void)
     APP_ERROR_CHECK(err_code);
 
     err_code = app_timer_create ( &timer_pedestrian, APP_TIMER_MODE_SINGLE_SHOT, timer_handler_pedestrian );
-    APP_ERROR_CHECK(err_code);
-
-    err_code = app_timer_create ( &timer_change_state, APP_TIMER_MODE_SINGLE_SHOT, timer_handler_change_state );
-    APP_ERROR_CHECK(err_code);
-
-    err_code = app_timer_create  ( &timer_btn_debounce, APP_TIMER_MODE_SINGLE_SHOT, timer_handler_btn_debounce );
     APP_ERROR_CHECK(err_code);
 }
 
@@ -516,12 +536,11 @@ static uint32_t timer_ticks_to_ms (uint32_t ticks)
 // Print beacon info by serial port
 static void print_beacon_info (void)
 {
-    NRF_LOG_RAW_INFO("-------- INTELLIGENT TRAFFIC LIGHT BEACON --------\r\n");
+    NRF_LOG_RAW_INFO("\r\n-------- INTELLIGENT TRAFFIC LIGHT BEACON --------\r\n");
     NRF_LOG_RAW_INFO("Latitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x\r\n", LATITUDE);
     NRF_LOG_RAW_INFO("Longitude (little-end): 0x%02x 0x%02x 0x%02x 0x%02x\r\n", LONGITUDE);
-    NRF_LOG_RAW_INFO("Direction from (little-end): 0x%02x 0x%02x\r\n", DIRECTION_FROM);
-    NRF_LOG_RAW_INFO("Direction to (little-end): 0x%02x 0x%02x\r\n", DIRECTION_TO);
-    NRF_LOG_RAW_INFO("Beacon type: 0x%02x\r\n", BEACON_TYPE);
+    NRF_LOG_RAW_INFO("BLE advertising public key:\r\n");
+    NRF_LOG_RAW_HEXDUMP_INFO(public_key_byte_array,sizeof(public_key_byte_array));
     NRF_LOG_RAW_INFO("--------------------------------------------------\r\n");
 }
 
@@ -548,6 +567,13 @@ static void log_init(void)
     APP_ERROR_CHECK(err_code);
 
     NRF_LOG_DEFAULT_BACKENDS_INIT();
+}
+
+// Memory manager initialization
+static void mem_init(void)
+{
+    ret_code_t err_code = nrf_mem_init();
+    APP_ERROR_CHECK(err_code);
 }
 
 // Clock initialization
@@ -584,7 +610,7 @@ static void idle_state_handle(void)
 
 int main(void)
 {
-    // Initialize
+    // Start initialization
     log_init();
     clock_init();
     timers_init();
@@ -594,11 +620,16 @@ int main(void)
     advertising_init();
     radio_notification_init();
 
+    mem_init();
+    crypto_init();                                                                          // Crypto_init must be called AFTER ble_stack_init()!
+
     // Start execution.
     lastState = YELLOW_STATE;                                                               // Initial traffic light state
     timers_start();
     advertising_start();
     print_beacon_info();
+
+    sign_frame();                                                                           // Generate ECDSA signature of frame and include it on it
 
     // Enter main loop.
     for (;;)
