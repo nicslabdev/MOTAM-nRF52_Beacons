@@ -14,8 +14,6 @@ This is possible thanks to some of the new improvements of Bluetooth 5: long ran
 
 Currently, this project uses:
 
-  
-
 - nRF5 SDK version 15.3.0
 
 - S140 SoftDevice v6.1.1 API
@@ -39,10 +37,10 @@ There are several ways for developing code in nRF52, we have done this with [SEG
 
 ## Applications' description
 
-  
-
 -  **Intelligent Traffic Light**: This application controls a traffic light with improved characteristics. We have develop a prototype of this, that looks like a standard traffic light, but inside it a nRF52840 is working transmitting through Bluetooth Long Range (PHY CODED) the information in real time about the state of the traffic light (what light is turned on) and what time left for the next state. This information is transmitted in a secured frame by means of cryptographic signature and the MOTAM PKI.
 
 > Note: This application is under development.
+
+> Note: Application for PCA10059 is not working right now. (TODO)
 
 ![Intelligent Traffic Light prototype](https://i.imgur.com/85sdWkW.png)
