@@ -1,0 +1,11 @@
+{
+    "extensions.ignoreRecommendations": true,
+    "C_Cpp.default.configurationProvider": "particle.particle-vscode-core",
+    "files.associations": {
+        "*.ino": "cpp"
+    },
+    "particle.targetDevice": "trafficLightBoron",
+    "particle.firmwareVersion": "1.2.1-rc.2",
+    "particle.targetPlatform": "boron",
+    "cortex-debug.openocdPath": "/Users/manuel/.particle/toolchains/openocd/0.10.0-particle.1/bin/openocd"
+}

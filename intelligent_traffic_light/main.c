@@ -1,7 +1,7 @@
 /***************************************************************************************/
 /*
  * intelligent_traffic_light
- * Created by Manuel Montenegro, Jul 09, 2019.
+ * Created by Manuel Montenegro, Sep 25, 2019.
  * Developed for MOTAM project.
  *
  *  This is a secure connected traffic light. The management connection with LTE-M modem 
@@ -11,6 +11,9 @@
  *  This code has been developed for Nordic Semiconductor nRF52840 PDK & nRF52840 dongle.
 */
 /***************************************************************************************/
+
+
+// NOTE: timers are not been using here, but deleting these cause system malfunction for some reason.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -54,9 +57,9 @@
 
 // ======== Global configuration and functions ========
 
-#define RED_STATE                               0x01                                        // Identifier of Red traffic light state
-#define YELLOW_STATE                            0x02                                        // Identifier of Yellow traffic light state
-#define GREEN_STATE                             0x03                                        // Identifier of Green traffic light state
+#define RED_STATE                               0x00                                        // Identifier of Red traffic light state
+#define YELLOW_STATE                            0x01                                        // Identifier of Yellow traffic light state
+#define GREEN_STATE                             0x02                                        // Identifier of Green traffic light state
 #define EMERGENCY_RED_STATE                     0x04                                        // Identifier of red state due to a emergency vehicle is near
 #define EMERGENCY_GREEN_STATE                   0x05                                        // Identifier of green state due to a emergency vehicle is near
 #define RED_STATE_DURATION                      5                                          // Duration of red traffic light state in seconds (MINIMUM VALUE: 5 SECONDS)
@@ -85,7 +88,7 @@ static void sign_frame ();
 static char serial_rx [256];
 
 #define RX_PIN_SERIAL NRF_GPIO_PIN_MAP(0,24)
-#define TX_PIN_SERIAL NRF_GPIO_PIN_MAP(1,00)
+#define TX_PIN_SERIAL NRF_GPIO_PIN_MAP(1,00)                                                // UNUSED
 
 // Serial port sleep handler
 static void sleep_handler(void)
@@ -105,68 +108,49 @@ NRF_SERIAL_DRV_UART_CONFIG_DEF(m_uarte0_drv_config,
                       UART_DEFAULT_CONFIG_IRQ_PRIORITY);
 
 
-NRF_SERIAL_DRV_UART_CONFIG_DEF(m_uarte1_drv_config,
-                      RX_PIN_NUMBER, TX_PIN_NUMBER,
-                      RTS_PIN_NUMBER, CTS_PIN_NUMBER,
-                      NRF_UART_HWFC_DISABLED, NRF_UART_PARITY_EXCLUDED,
-                      NRF_UART_BAUDRATE_115200,
-                      UART_DEFAULT_CONFIG_IRQ_PRIORITY);
-
 #define SERIAL_FIFO_TX_SIZE 32
-#define SERIAL_FIFO_RX_SIZE 32
+#define SERIAL_FIFO_RX_SIZE 1
 
 NRF_SERIAL_QUEUES_DEF(serial0_queues, SERIAL_FIFO_TX_SIZE, SERIAL_FIFO_RX_SIZE);
-NRF_SERIAL_QUEUES_DEF(serial1_queues, SERIAL_FIFO_TX_SIZE, SERIAL_FIFO_RX_SIZE);
 
-#define SERIAL_BUFF_TX_SIZE 1
+#define SERIAL_BUFF_TX_SIZE 32
 #define SERIAL_BUFF_RX_SIZE 1
 
 NRF_SERIAL_BUFFERS_DEF(serial0_buffs, SERIAL_BUFF_TX_SIZE, SERIAL_BUFF_RX_SIZE);
-NRF_SERIAL_BUFFERS_DEF(serial1_buffs, SERIAL_BUFF_TX_SIZE, SERIAL_BUFF_RX_SIZE);
 
 NRF_SERIAL_CONFIG_DEF(serial0_config, NRF_SERIAL_MODE_DMA,
                       &serial0_queues, &serial0_buffs, event_handler, sleep_handler);
-NRF_SERIAL_CONFIG_DEF(serial1_config, NRF_SERIAL_MODE_DMA,
-                      &serial1_queues, &serial1_buffs, event_handler, sleep_handler);
 
 NRF_SERIAL_UART_DEF(serial0_uarte, 0);
-NRF_SERIAL_UART_DEF(serial1_uarte, 1);
 
-static void event_handler (struct nrf_serial_s const *p_serial, nrf_serial_event_t event) 
-{
+static void turnOnLeds (uint8_t state, uint8_t timeout);
+
+static void update_frame ( );
+
+static void event_handler(struct nrf_serial_s const *p_serial, nrf_serial_event_t event) {
     if (event == NRF_SERIAL_EVENT_RX_DATA) {
-        char c;
+        uint8_t b;
         static int cont = 0;
+        APP_ERROR_CHECK(nrf_serial_read(&serial0_uarte, &b, sizeof(b), NULL, 500));
+        serial_rx[cont] = b;
+        cont ++;
 
-        APP_ERROR_CHECK(nrf_serial_read(p_serial, &c, sizeof(c), NULL, 500));
-
-        if (c!='\n')
+        if (cont >= 6)
         {
-            serial_rx[cont] = c;
-            cont++;
-        }
-        else
-        {
-//            serial_rx[cont] = '\0';
-//                            nrf_serial_write(&serial1_uarte,
-//                           serial_rx,
-//                           cont,
-//                           NULL,
-//                           NRF_SERIAL_MAX_TIMEOUT);
-//
-//                (void)nrf_serial_flush(&serial1_uarte, 0);
+            APP_ERROR_CHECK(nrf_serial_write(&serial0_uarte, &serial_rx, 2, NULL, 500));
+            (void)nrf_serial_flush(&serial0_uarte, 0);
+            turnOnLeds (serial_rx[0], serial_rx[1]);
+            update_frame ();
             cont = 0;
-        } 
-           
-                
+        }
+        
     }
 }
+
 
 static void serial_init(void)
 {
     ret_code_t ret = nrf_serial_init(&serial0_uarte, &m_uarte0_drv_config, &serial0_config);
-    APP_ERROR_CHECK(ret);
-    ret = nrf_serial_init(&serial1_uarte, &m_uarte1_drv_config, &serial1_config);
     APP_ERROR_CHECK(ret);
 }
 
@@ -178,9 +162,9 @@ static void serial_init(void)
 #define ADV_DATA_TYPE                           0xFF                                        // Advertising data type (0xFF -> Manufacturer specific data)
 #define MOTAM_ID                                0xBE, 0x5E                                  // MOTAM identifier (5Ecure BEacon)
 #define DEFAULT_TIMESTAMP                       0x00, 0x00, 0x00, 0x00                      // Default UNIX timestamp
-#define BEACON_TYPE                             0x05                                        // Type of MOTAM beacon (0x05 -> Intelligent Traffic Light)
-#define LATITUDE                                0x42, 0x12, 0xDD, 0x41                      // GPS latitude of the beacon (float in little endian)
-#define LONGITUDE                               0xC0, 0x8F, 0xEE, 0x72                      // GPS longitude of the beacon (float in little endian)
+#define BEACON_TYPE                             0x01                                        // Type of MOTAM beacon (0x05 -> Intelligent Traffic Light)
+#define LATITUDE                                0x42, 0x12, 0xDD, 0x17                      // GPS latitude of the beacon (float in little endian)
+#define LONGITUDE                               0xC0, 0x8F, 0xFF, 0xC7                      // GPS longitude of the beacon (float in little endian)
 #define DEVICE_ID                               LATITUDE, LONGITUDE                         // Device ID on traffic light corresponds the gps coordinates
 #define DIRECTION_FROM                          0x01, 0X0E                                  // From direction that applies (35)
 #define DIRECTION_TO                            0x00, 0x5A                                  // To direction that applies (280)
@@ -352,6 +336,15 @@ static void radio_active_handler ( bool radio_active )
 }
 
 
+static void update_frame ( void )
+{
+    frame[21] = serial_rx[0];
+    frame[22] = serial_rx[1];
+    memcpy(&frame[4],&serial_rx[2],4*sizeof(uint8_t));
+    sign_frame();
+}
+
+
 // ======== Crypto configuration ========
 
 // Intelligent Traffic Light private key in byte array format
@@ -447,19 +440,19 @@ static void sign_frame ()
 // ======== GPIO and timers initialization ========
 
 // GPIO LED parameters
-#define LED_RED                                 NRF_GPIO_PIN_MAP(0,13)                    // Internal LED PINs for TESTING
-#define LED_YELLOW                              NRF_GPIO_PIN_MAP(0,14)
-#define LED_GREEN                               NRF_GPIO_PIN_MAP(0,15)
-//#define LED_RED                                 NRF_GPIO_PIN_MAP(1,10)                      // External PINs
-//#define LED_YELLOW                              NRF_GPIO_PIN_MAP(1,13)
-//#define LED_GREEN                               NRF_GPIO_PIN_MAP(1,15)
+//#define LED_RED                                 NRF_GPIO_PIN_MAP(0,13)                    // Internal LED PINs for TESTING
+//#define LED_YELLOW                              NRF_GPIO_PIN_MAP(0,14)
+//#define LED_GREEN                               NRF_GPIO_PIN_MAP(0,15)
+#define LED_RED                                 NRF_GPIO_PIN_MAP(1,10)                      // External PINs
+#define LED_YELLOW                              NRF_GPIO_PIN_MAP(1,13)
+#define LED_GREEN                               NRF_GPIO_PIN_MAP(1,15)
 #define LED_RED_PEDESTRIAN 			NRF_GPIO_PIN_MAP(0,29)
 #define LED_GREEN_PEDESTRIAN			NRF_GPIO_PIN_MAP(0,31)
 
 uint32_t DURATION_RED =				APP_TIMER_TICKS(RED_STATE_DURATION*1000);    // Duration of red state in milliseconds
 uint32_t DURATION_YELLOW = 			APP_TIMER_TICKS(YELLOW_STATE_DURATION*1000); // Duration of yellow state in milliseconds
-uint32_t DURATION_GREEN =				APP_TIMER_TICKS(GREEN_STATE_DURATION*1000);  // Duration of green state in milliseconds
-uint32_t DURATION_BLINKY =				APP_TIMER_TICKS(BLINKY_STATE_DURATION*1000); // Duration of blinky in pedestrian green state in milliseconds
+uint32_t DURATION_GREEN =			APP_TIMER_TICKS(GREEN_STATE_DURATION*1000);  // Duration of green state in milliseconds
+uint32_t DURATION_BLINKY =			APP_TIMER_TICKS(BLINKY_STATE_DURATION*1000); // Duration of blinky in pedestrian green state in milliseconds
 
 APP_TIMER_DEF (timer);                                                                      // Timer instance for traffic
 APP_TIMER_DEF (timer_pedestrian);                                                           // Timer instance for pedestrian blinky green light
@@ -528,34 +521,59 @@ static void gpio_init()
     pins_clear();                                                                           // Set all leds to low
 }
 
+
+static void turnOnLeds (uint8_t state, uint8_t timeout)
+{
+    pins_clear();
+    if (state == RED_STATE)
+    {
+        nrf_gpio_pin_set(LED_RED);
+        nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);
+        if (timeout <=5 && timeout % 2 == 0)
+        {
+            nrf_gpio_pin_clear(LED_GREEN_PEDESTRIAN);
+        }
+    }
+    else if (state == YELLOW_STATE)
+    {
+        nrf_gpio_pin_set(LED_YELLOW);
+        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
+    }
+    else if (state == GREEN_STATE)
+    {
+        nrf_gpio_pin_set(LED_GREEN);
+        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
+    }        
+}
+
 // Handle the timers: this will change the state of the traffic light
 static void timer_handler (void *p_context)
 {
     ret_code_t err_code;
 
-    pins_clear();                                                                           // Set all leds to low
+//    pins_clear();                                                                           // Set all leds to low
 
     if (lastState == RED_STATE)
     {
         currentState = GREEN_STATE;                                                         // New state: green
-        nrf_gpio_pin_set(LED_GREEN);                                                        // Turn on green light
-        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
+//        nrf_gpio_pin_set(LED_GREEN);                                                        // Turn on green light
+//        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
         err_code = app_timer_start ( timer, DURATION_GREEN, NULL);
         APP_ERROR_CHECK(err_code);
     }
     else if (lastState == GREEN_STATE)
     {
         currentState = YELLOW_STATE;                                                        // New state: yellow
-        nrf_gpio_pin_set(LED_YELLOW);                                                       // Turn on green light
-        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);                                               // Turn on pedestrian red light
+//        nrf_gpio_pin_set(LED_YELLOW);                                                       // Turn on green light
+//        nrf_gpio_pin_set(LED_RED_PEDESTRIAN);                                               // Turn on pedestrian red light
         err_code = app_timer_start ( timer, DURATION_YELLOW, NULL);
         APP_ERROR_CHECK(err_code);
     }
     else if (lastState == YELLOW_STATE)
     {
         currentState = RED_STATE;                                                           // New state: red
-        nrf_gpio_pin_set(LED_RED);                                                          // Turn on red lightb
-        nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);                                             // Turn on pedestrian green light
+//        nrf_gpio_pin_set(LED_RED);                                                          // Turn on red lightb
+//        nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);                                             // Turn on pedestrian green light
         err_code = app_timer_start (timer, DURATION_RED, NULL);
         APP_ERROR_CHECK(err_code);
         err_code = app_timer_start (timer_pedestrian, (DURATION_RED-DURATION_BLINKY), NULL);// Start timer in order to start pedestrian blinky state
@@ -577,14 +595,14 @@ static void timer_handler_pedestrian (void *p_context)
     {
         if (!(blink_cont%2))
         {
-            nrf_gpio_pin_clear(LED_GREEN_PEDESTRIAN);
+//            nrf_gpio_pin_clear(LED_GREEN_PEDESTRIAN);
             blink_cont--;
             err_code = app_timer_start ( timer_pedestrian, APP_TIMER_TICKS(250), NULL);
             APP_ERROR_CHECK(err_code);
         }
         else if (blink_cont%2)
         {
-            nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);
+//            nrf_gpio_pin_set(LED_GREEN_PEDESTRIAN);
             blink_cont--;
             err_code = app_timer_start ( timer_pedestrian, APP_TIMER_TICKS(250), NULL);
             APP_ERROR_CHECK(err_code);
@@ -603,122 +621,6 @@ static void timers_start (void);
 static void timer_handler_frame_update (void *p_context)
 {
 
-    static uint8_t staticState = 0;
-
-    static uint8_t old_timeout = DEFAULT_TIMELEFT;
-    static uint8_t old_currentState = DEFAULT_STATE;
-    uint8_t timeout = current_state_duration() - (timer_ticks_to_ms (app_timer_cnt_diff_compute (app_timer_cnt_get(),lastStateTicks))/1000);
-
-
-//        char timestampChar [11];
-//        memcpy (timestampChar,serial_rx,sizeof(timestampChar));
-//        timestampChar[10] = '\0';
-     
-        nrf_serial_write(&serial1_uarte,
-                               serial_rx,
-                               30,
-                               NULL,
-                               NRF_SERIAL_MAX_TIMEOUT);
-        (void)nrf_serial_flush(&serial1_uarte, 0);
-
-
-    if (serial_rx[11] == 'd')
-    {
-        char redTimeChar [3];
-        char yellowTimeChar [3];
-        char greenTimeChar [3];
-
-        memcpy(redTimeChar, &serial_rx[19], 3);
-        memcpy(yellowTimeChar, &serial_rx[23], 3);
-        memcpy(greenTimeChar, &serial_rx[27], 3);
-
-        int newRedTime = atoi(redTimeChar);
-        int newYellowTime = atoi(yellowTimeChar);
-        int newGreenTime = atoi(greenTimeChar);
-
-        DURATION_RED = APP_TIMER_TICKS(newRedTime*1000);
-        DURATION_YELLOW = APP_TIMER_TICKS(newYellowTime*1000);
-        DURATION_GREEN = APP_TIMER_TICKS(newGreenTime*1000);
-
-//        DURATION_RED =APP_TIMER_TICKS(RED_STATE_DURATION*1000);
-//        DURATION_YELLOW =APP_TIMER_TICKS(YELLOW_STATE_DURATION*1000);
-//        DURATION_GREEN =APP_TIMER_TICKS(GREEN_STATE_DURATION*1000);
-
-        if (staticState == 1)
-        {
-            timers_start();
-            staticState = 0;
-        }
-
-    }
-    else if (serial_rx[11] == 's')
-    {
-        ret_code_t err_code;
-        err_code = app_timer_stop(timer);
-        APP_ERROR_CHECK(err_code);
-        err_code = app_timer_stop (timer_pedestrian);
-        APP_ERROR_CHECK(err_code);
-        
-        pins_clear ();
-
-        if (serial_rx[18] == '1')
-        {
-            nrf_gpio_pin_set(LED_GREEN);
-            nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
-        }
-        else if (serial_rx[18] == '2')
-        {
-            nrf_gpio_pin_set(LED_YELLOW);
-            nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
-        }
-        else if (serial_rx[18] == '3')
-        {
-            nrf_gpio_pin_set(LED_RED);
-            nrf_gpio_pin_set(LED_RED_PEDESTRIAN);
-        }
-        staticState = 1;
-    }
-
-
-
-    if (currentState != old_currentState || timeout != old_timeout) 
-    {
-        frame[21] = currentState;
-        frame[22] = timeout;
-        memcpy(&frame[4],&unixTimestamp,sizeof(unixTimestamp));
-        sign_frame();
-        old_timeout = timeout;
-        old_currentState = currentState;
-
-
-        // Send to Particle Boron current timeout and state
-        char timeoutChar [3];
-        char currentStateChar [1];
-        itoa(timeout,timeoutChar, 10);
-        itoa(currentState, currentStateChar, 10);
-
-        nrf_serial_write(&serial0_uarte,
-                           currentStateChar,
-                           strlen(currentStateChar),
-                           NULL,
-                           NRF_SERIAL_MAX_TIMEOUT);
-
-        nrf_serial_write(&serial0_uarte,
-                           timeoutChar,
-                           strlen(timeoutChar),
-                           NULL,
-                           NRF_SERIAL_MAX_TIMEOUT);
-
-        static char tx_message[] = "\r\n";
-
-        nrf_serial_write(&serial0_uarte,
-                           tx_message,
-                           strlen(tx_message),
-                           NULL,
-                           NRF_SERIAL_MAX_TIMEOUT);
-
-        (void)nrf_serial_flush(&serial0_uarte, 0);
-    }
 }
 
 // Timer initialization
